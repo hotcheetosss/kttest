@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Тренажёр тестов</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="logo" onclick="App.goHome()">📚 Тренажёр тестов</div>
+    <nav>
+      <button class="nav-btn" id="nav-home" onclick="App.goHome()">Темы</button>
+      <button class="nav-btn" id="nav-stats" onclick="App.showStats()">Статистика</button>
+    </nav>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<footer class="footer">Проходной порог: 85% · База вопросов: <span id="bank-info"></span></footer>
+
+<script src="data/questions.js"></script>
+<script src="data/sp_management_1.js"></script>
+<script src="data/sp_management_2.js"></script>
+<script src="data/sp_management_3.js"></script>
+<script src="data/sp_business_1.js"></script>
+<script src="data/sp_business_2.js"></script>
+<script src="data/sp_business_3.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
