@@ -140,13 +140,56 @@
   }
 
   /* ---------- home ---------- */
+  /* Темы-пробники, объединяемые в раздел «Пробники» на главной */
+  var PROBNIKI = ["english", "tgo", "management", "business"];
+
+  function topicCardHTML(tid, history) {
+    var t = BANK.topics[tid];
+    var total = allQuestions(t).length;
+    var attempts = history.filter(function (a) { return a.topicId === tid && !a.retry; });
+    var best = attempts.length ? Math.max.apply(null, attempts.map(function (a) { return a.pct; })) : null;
+    var last = attempts.length ? attempts[0].pct : null;
+    var passed = best !== null && best >= PASS;
+
+    var meta = "В базе: <b>" + total + "</b> вопросов · Блок: <b>" + t.blockSize + "</b>";
+    if (tid === "english") meta += "<br>(" + t.sections.lexis.count + " лексика-грамматика + " + t.sections.reading.count + " чтение)";
+    if (tid === "business") meta += "<br>Один или несколько правильных ответов (2/1/0 баллов)";
+
+    var stats = "";
+    if (attempts.length) {
+      stats = "<div class='topic-stats'>" +
+        "<span class='badge " + (passed ? "pass" : "fail") + "'>" + (passed ? "Сдано" : "Не сдано") + "</span>" +
+        "<span>Последний: <b>" + last + "%</b></span>" +
+        "<span>Лучший: <b>" + best + "%</b></span></div>";
+    } else {
+      stats = "<div class='topic-stats'><span class='badge neutral'>Ещё не проходил</span></div>";
+    }
+
+    var disabled = total === 0 ? " disabled" : "";
+    return "<div class='topic-card'><h3>" + esc(t.name) + "</h3>" +
+      "<div class='topic-meta'>" + meta + "</div>" + stats +
+      "<button class='btn' data-start='" + tid + "'" + disabled + ">Начать блок</button></div>";
+  }
+
   function goHome() {
     quiz = null;
     setNav("home");
     var history = getHistory();
-    var html = "<h1>Выбери тему</h1><p class='subtitle'>Блок собирается случайно из базы вопросов. Проходной порог — " + PASS + "%.</p><div class='topic-grid'>";
+    var html = "<h1>Выбери раздел</h1><p class='subtitle'>Проходной порог — " + PASS + "%.</p><div class='topic-grid'>";
+
+    /* карточка «Пробники» */
+    var pTotal = PROBNIKI.reduce(function (s, tid) { return s + allQuestions(BANK.topics[tid]).length; }, 0);
+    var pPassed = PROBNIKI.filter(function (tid) {
+      var atts = history.filter(function (a) { return a.topicId === tid && !a.retry; });
+      return atts.length && Math.max.apply(null, atts.map(function (a) { return a.pct; })) >= PASS;
+    }).length;
+    html += "<div class='topic-card'><h3>Пробники</h3>" +
+      "<div class='topic-meta'>Тестов: <b>" + PROBNIKI.length + "</b> · Вопросов: <b>" + pTotal + "</b><br>Английский язык, ТГО, менеджмент, организация бизнеса — полные варианты</div>" +
+      "<div class='topic-stats'><span class='badge " + (pPassed === PROBNIKI.length ? "pass" : "neutral") + "'>Сдано: " + pPassed + "/" + PROBNIKI.length + "</span></div>" +
+      "<button class='btn' data-probniki='1'>Выбрать тест</button></div>";
 
     Object.keys(BANK.topics).forEach(function (tid) {
+      if (PROBNIKI.indexOf(tid) !== -1) return;
       var t = BANK.topics[tid];
       var total = allQuestions(t).length;
 
@@ -162,29 +205,7 @@
         return;
       }
 
-      var attempts = history.filter(function (a) { return a.topicId === tid && !a.retry; });
-      var best = attempts.length ? Math.max.apply(null, attempts.map(function (a) { return a.pct; })) : null;
-      var last = attempts.length ? attempts[0].pct : null;
-      var passed = best !== null && best >= PASS;
-
-      var meta = "В базе: <b>" + total + "</b> вопросов · Блок: <b>" + t.blockSize + "</b>";
-      if (tid === "english") meta += "<br>(" + t.sections.lexis.count + " лексика-грамматика + " + t.sections.reading.count + " чтение)";
-      if (tid === "business") meta += "<br>Один или несколько правильных ответов (2/1/0 баллов)";
-
-      var stats = "";
-      if (attempts.length) {
-        stats = "<div class='topic-stats'>" +
-          "<span class='badge " + (passed ? "pass" : "fail") + "'>" + (passed ? "Сдано" : "Не сдано") + "</span>" +
-          "<span>Последний: <b>" + last + "%</b></span>" +
-          "<span>Лучший: <b>" + best + "%</b></span></div>";
-      } else {
-        stats = "<div class='topic-stats'><span class='badge neutral'>Ещё не проходил</span></div>";
-      }
-
-      var disabled = total === 0 ? " disabled" : "";
-      html += "<div class='topic-card'><h3>" + esc(t.name) + "</h3>" +
-        "<div class='topic-meta'>" + meta + "</div>" + stats +
-        "<button class='btn' data-start='" + tid + "'" + disabled + ">Начать блок</button></div>";
+      html += topicCardHTML(tid, history);
     });
 
     html += "</div>";
@@ -195,7 +216,26 @@
     main.querySelectorAll("[data-themes]").forEach(function (b) {
       b.addEventListener("click", function () { showThemes(b.getAttribute("data-themes")); });
     });
+    var pb = main.querySelector("[data-probniki]");
+    if (pb) pb.addEventListener("click", showProbniki);
     updateBankInfo();
+  }
+
+  /* ---------- список пробников ---------- */
+  function showProbniki() {
+    quiz = null;
+    setNav("home");
+    var history = getHistory();
+    var html = "<h1>Пробники</h1><p class='subtitle'>Полные варианты по предметам, блоки собираются из базы. Порог — " + PASS + "%.</p>" +
+      "<div style='margin-bottom:16px'><button class='btn ghost' id='btn-back-home'>← Ко всем разделам</button></div><div class='topic-grid'>";
+    PROBNIKI.forEach(function (tid) { html += topicCardHTML(tid, history); });
+    html += "</div>";
+    main.innerHTML = html;
+    el("btn-back-home").addEventListener("click", goHome);
+    main.querySelectorAll("[data-start]").forEach(function (b) {
+      b.addEventListener("click", function () { startBlock(b.getAttribute("data-start")); });
+    });
+    window.scrollTo(0, 0);
   }
 
   /* ---------- theme list for grouped topics ---------- */
