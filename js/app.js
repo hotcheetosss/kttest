@@ -140,8 +140,13 @@
   }
 
   /* ---------- home ---------- */
-  /* Темы-пробники, объединяемые в раздел «Пробники» на главной */
-  var PROBNIKI = ["english", "tgo", "management", "business"];
+  /* Варианты пробников: каждый вариант — набор тем-предметов */
+  var PROBNIKI_VARIANTS = [
+    { id: "v1", name: "Вариант 1", topics: ["english", "tgo", "management", "business"] },
+    { id: "v4", name: "Вариант 4", topics: ["english_v4", "tgo_v4", "management_v4", "business_v4"] }
+  ];
+  var PROBNIKI = [];
+  PROBNIKI_VARIANTS.forEach(function (v) { PROBNIKI = PROBNIKI.concat(v.topics); });
 
   function topicCardHTML(tid, history) {
     var t = BANK.topics[tid];
@@ -184,9 +189,9 @@
       return atts.length && Math.max.apply(null, atts.map(function (a) { return a.pct; })) >= PASS;
     }).length;
     html += "<div class='topic-card'><h3>Пробники</h3>" +
-      "<div class='topic-meta'>Тестов: <b>" + PROBNIKI.length + "</b> · Вопросов: <b>" + pTotal + "</b><br>Английский язык, ТГО, менеджмент, организация бизнеса — полные варианты</div>" +
-      "<div class='topic-stats'><span class='badge " + (pPassed === PROBNIKI.length ? "pass" : "neutral") + "'>Сдано: " + pPassed + "/" + PROBNIKI.length + "</span></div>" +
-      "<button class='btn' data-probniki='1'>Выбрать тест</button></div>";
+      "<div class='topic-meta'>Вариантов: <b>" + PROBNIKI_VARIANTS.length + "</b> · Вопросов: <b>" + pTotal + "</b><br>Полные варианты: английский, ТГО, менеджмент, организация бизнеса</div>" +
+      "<div class='topic-stats'><span class='badge " + (pPassed === PROBNIKI.length ? "pass" : "neutral") + "'>Сдано тестов: " + pPassed + "/" + PROBNIKI.length + "</span></div>" +
+      "<button class='btn' data-probniki='1'>Выбрать вариант</button></div>";
 
     Object.keys(BANK.topics).forEach(function (tid) {
       if (PROBNIKI.indexOf(tid) !== -1) return;
@@ -221,17 +226,47 @@
     updateBankInfo();
   }
 
-  /* ---------- список пробников ---------- */
+  /* ---------- список вариантов пробников ---------- */
   function showProbniki() {
     quiz = null;
     setNav("home");
     var history = getHistory();
-    var html = "<h1>Пробники</h1><p class='subtitle'>Полные варианты по предметам, блоки собираются из базы. Порог — " + PASS + "%.</p>" +
+    var html = "<h1>Пробники</h1><p class='subtitle'>Выбери вариант — внутри полные тесты по всем предметам. Порог — " + PASS + "%.</p>" +
       "<div style='margin-bottom:16px'><button class='btn ghost' id='btn-back-home'>← Ко всем разделам</button></div><div class='topic-grid'>";
-    PROBNIKI.forEach(function (tid) { html += topicCardHTML(tid, history); });
+    PROBNIKI_VARIANTS.forEach(function (v) {
+      var total = v.topics.reduce(function (s, tid) { return s + allQuestions(BANK.topics[tid]).length; }, 0);
+      var passed = v.topics.filter(function (tid) {
+        var atts = history.filter(function (a) { return a.topicId === tid && !a.retry; });
+        return atts.length && Math.max.apply(null, atts.map(function (a) { return a.pct; })) >= PASS;
+      }).length;
+      html += "<div class='topic-card'><h3>" + esc(v.name) + "</h3>" +
+        "<div class='topic-meta'>Предметов: <b>" + v.topics.length + "</b> · Вопросов: <b>" + total + "</b><br>" +
+        v.topics.map(function (tid) { return esc(BANK.topics[tid].name); }).join(", ") + "</div>" +
+        "<div class='topic-stats'><span class='badge " + (passed === v.topics.length ? "pass" : "neutral") + "'>Сдано: " + passed + "/" + v.topics.length + "</span></div>" +
+        "<button class='btn' data-variant='" + v.id + "'>Открыть вариант</button></div>";
+    });
     html += "</div>";
     main.innerHTML = html;
     el("btn-back-home").addEventListener("click", goHome);
+    main.querySelectorAll("[data-variant]").forEach(function (b) {
+      b.addEventListener("click", function () { showProbnikiVariant(b.getAttribute("data-variant")); });
+    });
+    window.scrollTo(0, 0);
+  }
+
+  /* ---------- предметы одного варианта ---------- */
+  function showProbnikiVariant(vid) {
+    quiz = null;
+    setNav("home");
+    var v = PROBNIKI_VARIANTS.filter(function (x) { return x.id === vid; })[0];
+    if (!v) return showProbniki();
+    var history = getHistory();
+    var html = "<h1>Пробники · " + esc(v.name) + "</h1><p class='subtitle'>Полные тесты по предметам варианта. Порог — " + PASS + "%.</p>" +
+      "<div style='margin-bottom:16px'><button class='btn ghost' id='btn-back-variants'>← К вариантам</button></div><div class='topic-grid'>";
+    v.topics.forEach(function (tid) { html += topicCardHTML(tid, history); });
+    html += "</div>";
+    main.innerHTML = html;
+    el("btn-back-variants").addEventListener("click", showProbniki);
     main.querySelectorAll("[data-start]").forEach(function (b) {
       b.addEventListener("click", function () { startBlock(b.getAttribute("data-start")); });
     });
