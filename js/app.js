@@ -419,7 +419,8 @@
 
     var earned = 0, max = 0;
     var perSection = {};
-    var wrong = [];
+    var review = [];
+    var wrongCount = 0;
 
     quiz.questions.forEach(function (q, i) {
       var r = scoreQuestion(q, quiz.answers[i]);
@@ -428,10 +429,9 @@
         var s = (perSection[q.section] = perSection[q.section] || { earned: 0, max: 0 });
         s.earned += r.earned; s.max += r.max;
       }
-      if (r.earned < r.max) {
-        wrong.push({ q: q, selected: quiz.answers[i].slice(), result: r });
-        bumpMissed(quiz.topicId, q.id);
-      }
+      var isCorrect = r.earned === r.max;
+      review.push({ q: q, selected: quiz.answers[i].slice(), result: r, isCorrect: isCorrect, num: i + 1 });
+      if (!isCorrect) { wrongCount++; bumpMissed(quiz.topicId, q.id); }
     });
 
     var pct = max ? Math.round(earned / max * 100) : 0;
@@ -442,24 +442,26 @@
       retry: quiz.retry,
       earned: earned, max: max, pct: pct,
       total: quiz.questions.length,
-      wrongCount: wrong.length
+      wrongCount: wrongCount
     };
     saveAttempt(attempt);
-    renderResults(attempt, wrong, perSection);
+    renderResults(attempt, review, perSection);
   }
 
   /* ---------- results ---------- */
-  function renderResults(attempt, wrong, perSection) {
+  function renderResults(attempt, review, perSection) {
     var t = BANK.topics[attempt.topicId];
     var passed = attempt.pct >= PASS;
     var topicId = attempt.topicId;
     var themeId = attempt.themeId || null;
     var themeName = themeId ? (findTheme(t, themeId) || {}).name : null;
+    var wrong = review.filter(function (x) { return !x.isCorrect; });
+    var right = review.filter(function (x) { return x.isCorrect; });
 
     var html = "<div class='result-hero'>" +
       "<div class='result-score " + (passed ? "pass" : "fail") + "'>" + attempt.pct + "%</div>" +
       "<div class='result-sub'>" + esc(t.name) + (themeName ? " · " + esc(themeName) : "") + (attempt.retry ? " · работа над ошибками" : "") +
-      " · " + attempt.earned + " из " + attempt.max + " баллов · верно " + (attempt.total - attempt.wrongCount) + " из " + attempt.total + " вопросов</div>" +
+      " · " + attempt.earned + " из " + attempt.max + " баллов · верно " + right.length + " из " + attempt.total + " вопросов</div>" +
       "<div style='margin-top:12px'><span class='badge " + (passed ? "pass" : "fail") + "'>" +
       (passed ? "Сдано (порог " + PASS + "%)" : "Не сдано (нужно " + PASS + "%)") + "</span></div>";
 
@@ -469,7 +471,7 @@
       sectionKeys.forEach(function (sk) {
         var s = perSection[sk];
         var name = t.sections && t.sections[sk] ? t.sections[sk].name : sk;
-        html += "<span>" + esc(name) + ": <b>" + s.earned + "/" + s.max + "</b> (" + Math.round(s.earned / s.max * 100) + "%)</span>";
+        html += "<span>" + esc(name) + ": <b>" + s.earned + "/" + s.max + "</b> (" + (s.max ? Math.round(s.earned / s.max * 100) : 0) + "%)</span>";
       });
       html += "</div>";
     }
@@ -479,33 +481,65 @@
     html += "<button class='btn secondary' id='btn-again'>Новый блок</button>" +
       "<button class='btn ghost' id='btn-home'>На главную</button></div></div>";
 
-    if (wrong.length) {
-      html += "<div class='section-h'>Работа над ошибками</div>";
-      wrong.forEach(function (w, idx) {
-        var q = w.q;
-        var yourText = w.selected.length
-          ? w.selected.map(function (i) { return letter(i) + ". " + q.options[i]; }).join("; ")
-          : "— нет ответа —";
-        var correctText = q.correct.map(function (i) { return letter(i) + ". " + q.options[i]; }).join("; ");
-        var partial = q.multi && w.result.earned > 0;
-
-        html += "<div class='review-item'>" +
-          "<div class='q-text'><b>" + (idx + 1) + ".</b> " + esc(q.text) + "</div>";
-        if (q.image) html += "<img class='q-image' src='" + esc(q.image) + "' alt='Иллюстрация к заданию'>";
-        if (q.passageId && t.passages && t.passages[q.passageId]) {
-          html += "<details style='margin-top:6px'><summary style='cursor:pointer;color:var(--muted);font-size:0.85rem'>Показать текст</summary><div class='passage-box' style='margin-top:8px'>" + esc(t.passages[q.passageId].text) + "</div></details>";
-        }
-        html += "<div class='answer-line yours" + (partial ? " partial" : "") + "'><b>Твой ответ:</b> " + esc(yourText) +
-          (q.multi ? " · " + w.result.earned + "/2 балла" : "") + "</div>" +
-          "<div class='answer-line correct'><b>Правильный ответ:</b> " + esc(correctText) + "</div>";
-        if (q.explanation) html += "<div class='explanation'><b>Объяснение:</b> " + esc(q.explanation) + "</div>";
-        html += "</div>";
-      });
-    } else {
-      html += "<div class='empty-note'>Ни одной ошибки — отличный результат! 🎉</div>";
-    }
+    html += "<div class='section-h'>Разбор вопросов</div>" +
+      "<div id='review-bar' style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px'></div>" +
+      "<div id='review-list'></div>";
 
     main.innerHTML = html;
+
+    function reviewItemHTML(w) {
+      var q = w.q;
+      var yourText = w.selected.length
+        ? w.selected.map(function (i) { return letter(i) + ". " + q.options[i]; }).join("; ")
+        : "— нет ответа —";
+      var correctText = q.correct.map(function (i) { return letter(i) + ". " + q.options[i]; }).join("; ");
+      var partial = q.multi && !w.isCorrect && w.result.earned > 0;
+      var badge = w.isCorrect
+        ? "<span class='badge pass'>Верно</span>"
+        : (partial ? "<span class='badge warn'>Частично</span>" : "<span class='badge fail'>Ошибка</span>");
+
+      var h = "<div class='review-item'>" +
+        "<div class='q-text'><b>" + w.num + ".</b> " + badge + " " + esc(q.text) + "</div>";
+      if (q.image) h += "<img class='q-image' src='" + esc(q.image) + "' alt='Иллюстрация к заданию'>";
+      if (q.passageId && t.passages && t.passages[q.passageId]) {
+        h += "<details style='margin-top:6px'><summary style='cursor:pointer;color:var(--muted);font-size:0.85rem'>Показать текст</summary><div class='passage-box' style='margin-top:8px'>" + esc(t.passages[q.passageId].text) + "</div></details>";
+      }
+      if (w.isCorrect) {
+        h += "<div class='answer-line correct'><b>Твой ответ (верно):</b> " + esc(yourText) +
+          (q.multi ? " · " + w.result.earned + "/2 балла" : "") + "</div>";
+      } else {
+        h += "<div class='answer-line yours" + (partial ? " partial" : "") + "'><b>Твой ответ:</b> " + esc(yourText) +
+          (q.multi ? " · " + w.result.earned + "/2 балла" : "") + "</div>" +
+          "<div class='answer-line correct'><b>Правильный ответ:</b> " + esc(correctText) + "</div>";
+      }
+      if (q.explanation) h += "<div class='explanation'><b>Объяснение:</b> " + esc(q.explanation) + "</div>";
+      h += "</div>";
+      return h;
+    }
+
+    var filter = "all";
+    function filterBtn(f, label) {
+      return "<button class='btn " + (filter === f ? "secondary" : "ghost") + "' data-filt='" + f + "'>" + label + "</button>";
+    }
+    function drawBar() {
+      var bar = el("review-bar");
+      bar.innerHTML = filterBtn("all", "Все (" + review.length + ")") +
+        filterBtn("wrong", "Ошибки (" + wrong.length + ")") +
+        filterBtn("right", "Верные (" + right.length + ")");
+      bar.querySelectorAll("[data-filt]").forEach(function (b) {
+        b.addEventListener("click", function () { filter = b.getAttribute("data-filt"); drawBar(); drawList(); });
+      });
+    }
+    function drawList() {
+      var items = filter === "wrong" ? wrong : filter === "right" ? right : review;
+      var list = el("review-list");
+      list.innerHTML = items.length
+        ? items.map(reviewItemHTML).join("")
+        : "<div class='empty-note'>Нет вопросов в этой категории.</div>";
+    }
+    drawBar();
+    drawList();
+
     if (wrong.length) {
       el("btn-retry").addEventListener("click", function () {
         startRetry(topicId, themeId, wrong.map(function (w) { return w.q; }));
